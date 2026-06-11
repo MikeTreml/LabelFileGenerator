@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using Microsoft.Dynamics.Ax.Xpp;
@@ -59,10 +60,9 @@ namespace LabelFileGenerator
         {
             try
             {
-                if (!Directory.Exists(LanguagePath))
-                {
-                    Directory.CreateDirectory(LanguagePath);
-                }
+                // CreateDirectory is a no-op when the directory already exists and is
+                // safe to call from multiple segment tasks concurrently.
+                Directory.CreateDirectory(LanguagePath);
 
                 CreateXML();
 
@@ -96,17 +96,17 @@ namespace LabelFileGenerator
         private void CreateTXT()
         {
             var txtFileName = string.Format("{0}.{1}.label.txt", Name, Language);
-            var txtFileContent = "";
+            var txtFileContent = new StringBuilder();
 
             if (Labels != null && Labels.Any())
             {
                 foreach (KeyValuePair<string, string> label in Labels)
                 {
-                    txtFileContent += label.Key + "=" + label.Value + Environment.NewLine;
+                    txtFileContent.Append(label.Key).Append('=').Append(label.Value).Append(Environment.NewLine);
                 }
             }
 
-            CreateFile(LanguagePath + "\\" + txtFileName, txtFileContent);
+            CreateFile(LanguagePath + "\\" + txtFileName, txtFileContent.ToString());
         }
 
         protected virtual void CreateFile(string path, string content)
@@ -212,6 +212,7 @@ namespace LabelFileGenerator
         public static LabelFileInfo Merge(List<LabelFileSegment> segments)
         {
             LabelFileInfo info = new LabelFileInfo();
+            var txtContent = new StringBuilder();
 
             foreach(var seg in segments)
             {
@@ -219,8 +220,10 @@ namespace LabelFileGenerator
                 info.XmlContent = seg.Info.XmlContent;
                 info.TxtPath = seg.Info.TxtPath;
 
-                info.TxtContent += seg.Info.TxtContent;
+                txtContent.Append(seg.Info.TxtContent);
             }
+
+            info.TxtContent = txtContent.ToString();
 
             return info;
         }
@@ -367,7 +370,14 @@ namespace LabelFileGenerator
             while (string.IsNullOrEmpty(lang))
             {
                 Console.WriteLine("Please, type the target language: ");
-                lang = formatLanguageInput(Console.ReadLine().Trim());
+
+                var input = Console.ReadLine();
+                if (input == null) // end of input stream (e.g. redirected/closed stdin)
+                {
+                    Environment.Exit(0);
+                }
+
+                lang = formatLanguageInput(input.Trim());
                 if (!ValidateLanguage(lang))
                 {
                     lang = "";
@@ -435,6 +445,8 @@ namespace LabelFileGenerator
                     Console.WriteLine(folder);
                 }
                 Console.WriteLine();
+
+                ok = false;
             }
 
             return ok;

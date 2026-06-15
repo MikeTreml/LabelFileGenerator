@@ -539,8 +539,9 @@ namespace LabelFileGenerator
             
             var labelFiles = GetLabelFiles();
 
-            // Each label file (or each of its segments, when split) is an independent
-            // file-writing unit of work.
+            // Each label file is an independent unit of work. Whole (unsegmented)
+            // files are written to disk here; segments instead capture their content
+            // into LabelFileInfo and are written later by WriteSegmentedFiles.
             var workItems = new List<Action>();
 
             foreach (var labelFile in labelFiles)

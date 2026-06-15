@@ -539,7 +539,9 @@ namespace LabelFileGenerator
             
             var labelFiles = GetLabelFiles();
 
-            var tasks = new List<Task>();
+            // Each label file (or each of its segments, when split) is an independent
+            // file-writing unit of work.
+            var workItems = new List<Action>();
 
             foreach (var labelFile in labelFiles)
             {
@@ -549,12 +551,12 @@ namespace LabelFileGenerator
                     {
                         foreach (var segment in labelFile.Segments)
                         {
-                            tasks.Add(new Task(() => segment.CreateFiles()));
+                            workItems.Add(() => segment.CreateFiles());
                         }
                     }
                     else
                     {
-                        tasks.Add(new Task(() => labelFile.CreateFiles()));
+                        workItems.Add(() => labelFile.CreateFiles());
                     }
                 }
             }
@@ -567,12 +569,12 @@ namespace LabelFileGenerator
                 Console.WriteLine();
             }
 
-            foreach (var t in tasks)
-            {
-                t.Start();
-            }
+            // Bound the concurrency to the available cores instead of starting one
+            // Task per work item at once, which could spawn hundreds of threads all
+            // doing synchronous file I/O.
+            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount };
 
-            Task.WaitAll(tasks.ToArray());
+            Parallel.ForEach(workItems, parallelOptions, work => work());
 
             WriteSegmentedFiles(labelFiles);
         }

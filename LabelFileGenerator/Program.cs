@@ -179,9 +179,15 @@ namespace LabelFileGenerator
                 program.Run();
             }
 
-            Console.WriteLine();
-            Console.WriteLine("Press enter to continue...");
-            Console.ReadLine();
+            // Only pause when launched with no arguments (e.g. double-clicked from
+            // Explorer) so the console window does not vanish before it can be read.
+            // When invoked from a shell or script the process exits normally.
+            if (args.Length == 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Press enter to continue...");
+                Console.ReadLine();
+            }
         }
 
         public void Run()
@@ -327,7 +333,18 @@ namespace LabelFileGenerator
 
         bool ValidateAOSServiceFolder(string aosServiceFolder)
         {
-            if (!AvailableAOSServiceFolders.Contains(aosServiceFolder))
+            // Match case-insensitively and ignore a missing trailing separator, so
+            // input like "k:\AosService" still matches the probed "K:\AOSService\".
+            string normalized = aosServiceFolder.Trim();
+            if (!normalized.EndsWith(Path.DirectorySeparatorChar.ToString()))
+            {
+                normalized += Path.DirectorySeparatorChar;
+            }
+
+            string match = AvailableAOSServiceFolders.FirstOrDefault(
+                folder => string.Equals(folder, normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (match == null)
             {
                 Console.WriteLine($"AOSService folder {aosServiceFolder} is invalid.");
                 Console.WriteLine("Available AOSService folders:");
@@ -339,6 +356,8 @@ namespace LabelFileGenerator
                 return false;
             }
 
+            // Use the canonical probed path for downstream path building.
+            Arguments.AOSServiceFolder = match;
             return true;
         }
 

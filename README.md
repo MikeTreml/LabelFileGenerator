@@ -3,7 +3,8 @@
 Generate label files for a Microsoft Dynamics 365 for Operations model in a target
 language, using the D365 **Metadata Provider API**. The tool reads the labels of a
 model's label files in a source language (en-US by default) and writes the same
-labels back for a target language, saving them into the model and layer you specify.
+labels back for a target language, saving them into the model you specify (a model
+is bound to a single layer, so the layer follows from the model).
 
 > **Why a target model is required:** labels are identified as `@LabelFile:Id`
 > *within a model*, and only models you own can be written to. Sealed Microsoft

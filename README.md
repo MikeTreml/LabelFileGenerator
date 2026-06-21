@@ -39,6 +39,9 @@ You are more than welcome to contribute!
 -f or --folder        The AOSService folder path. For example: K:\AosService\.
                       (if not specified, the first one found on a fixed drive is used)
 
+-o or --overwrite     Overwrite labels that already exist in the target language.
+                      By default existing target-language labels are kept (gaps only).
+
 -v or --verbose       Display the processed label files during the run.
 
 --help                Display the help screen.
@@ -56,7 +59,8 @@ The command line above reads the en-US labels of every label file in the
 `MyTranslations` model and writes Brazilian Portuguese (`pt-BR`) labels back into
 that same model, with the verbose flag on.
 
-Re-runs are non-destructive: labels that already exist in the target language are
-left untouched, so the tool only fills gaps and never overwrites a translation you
-edited by hand. The labels are saved into the model's own layer (a model is bound
+Re-runs are non-destructive by default: labels that already exist in the target
+language are left untouched, so the tool only fills gaps and never overwrites a
+translation you edited by hand. Pass `-o`/`--overwrite` to force every source label
+to be (re)written. The labels are saved into the model's own layer (a model is bound
 to a single layer), so there is no separate layer option.

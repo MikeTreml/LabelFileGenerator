@@ -72,13 +72,14 @@ namespace LabelFileGenerator
 
         /// <summary>
         /// Copies every <paramref name="sourceLanguage"/> label in the file into
-        /// <paramref name="targetLanguage"/> and saves it. Labels that already exist
-        /// in the target language are left untouched, so re-runs fill gaps without
-        /// clobbering translations that were edited by hand. Returns the number of
-        /// labels written (0 when the file is missing or has no source content).
+        /// <paramref name="targetLanguage"/> and saves it. When <paramref name="overwrite"/>
+        /// is false, labels that already exist in the target language are left
+        /// untouched, so re-runs fill gaps without clobbering translations that were
+        /// edited by hand; when true, every source label is (re)written. Returns the
+        /// number of labels written (0 when the file is missing or nothing changed).
         /// Performs one provider read and at most one provider write per file.
         /// </summary>
-        public int CopyLanguage(string labelFileId, string sourceLanguage, string targetLanguage)
+        public int CopyLanguage(string labelFileId, string sourceLanguage, string targetLanguage, bool overwrite)
         {
             // VERIFY: Read returns the AxLabelFile metamodel object.
             AxLabelFile labelFile = provider.Labels.Read(labelFileId);
@@ -91,8 +92,9 @@ namespace LabelFileGenerator
             // in the .txt resource of the file for the requested language; adjust
             // GetLabelContents / SetLabel to the actual content API exposed by
             // AxLabelFile.
-            var existingTarget = new HashSet<string>(
-                labelFile.GetLabelContents(targetLanguage).Select(e => e.Key));
+            var existingTarget = overwrite
+                ? new HashSet<string>()
+                : new HashSet<string>(labelFile.GetLabelContents(targetLanguage).Select(e => e.Key));
 
             int written = 0;
             foreach (var entry in labelFile.GetLabelContents(sourceLanguage))
@@ -134,6 +136,11 @@ namespace LabelFileGenerator
             HelpText = "The AOSService folder path, e.g. K:\\AosService\\. " +
                        "If not specified, the first one found on a fixed drive is used.")]
         public string AOSServiceFolder { get; set; }
+
+        [Option('o', "overwrite", Required = false,
+            HelpText = "Overwrite labels that already exist in the target language. " +
+                       "By default existing target-language labels are kept (gaps only).")]
+        public bool Overwrite { get; set; }
 
         [Option('v', "verbose", Required = false,
             HelpText = "Display the processed label files during the run.")]
@@ -285,7 +292,7 @@ namespace LabelFileGenerator
             {
                 try
                 {
-                    int written = service.CopyLanguage(labelFileId, Arguments.SourceLanguage, Arguments.Language);
+                    int written = service.CopyLanguage(labelFileId, Arguments.SourceLanguage, Arguments.Language, Arguments.Overwrite);
 
                     if (written == 0)
                     {

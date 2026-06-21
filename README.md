@@ -36,9 +36,6 @@ You are more than welcome to contribute!
 
 -s or --source-lang   Source language to copy label ids/text from. Default: en-US.
 
--y or --layer         Layer to save the generated labels into (usr, var, cus, ...).
-                      Default: usr.
-
 -f or --folder        The AOSService folder path. For example: K:\AosService\.
                       (if not specified, the first one found on a fixed drive is used)
 
@@ -58,3 +55,8 @@ LabelFileGenerator.exe -l pt-BR -m MyTranslations -v
 The command line above reads the en-US labels of every label file in the
 `MyTranslations` model and writes Brazilian Portuguese (`pt-BR`) labels back into
 that same model, with the verbose flag on.
+
+Re-runs are non-destructive: labels that already exist in the target language are
+left untouched, so the tool only fills gaps and never overwrites a translation you
+edited by hand. The labels are saved into the model's own layer (a model is bound
+to a single layer), so there is no separate layer option.

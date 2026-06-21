@@ -27,8 +27,10 @@ namespace LabelFileGenerator
     class MetadataLabelService
     {
         private readonly IMetadataProvider provider;
+        private readonly ModelSaveInfo saveInfo;
+        private readonly string modelName;
 
-        public MetadataLabelService(string packagesLocalDirectory)
+        public MetadataLabelService(string packagesLocalDirectory, string targetModel)
         {
             if (!Directory.Exists(packagesLocalDirectory))
             {
@@ -41,99 +43,75 @@ namespace LabelFileGenerator
 
             // VERIFY: factory + CreateDiskProvider(DiskProviderConfiguration).
             provider = new MetadataProviderFactory().CreateDiskProvider(diskConfig);
-        }
 
-        /// <summary>
-        /// The label file ids that belong to the given model. Only models you own
-        /// can be written to, so generation is scoped to a single target model.
-        /// </summary>
-        public IEnumerable<string> ListLabelFilesForModel(string model)
-        {
-            // VERIFY: ListObjectsForModel exists on ILabelProvider; otherwise list
-            // all label files and filter by the model's element membership.
-            return provider.Labels.ListObjectsForModel(model);
-        }
-
-        /// <summary>
-        /// Reads the (label id -> text) pairs of a label file for one language.
-        /// </summary>
-        public IDictionary<string, string> ReadLabels(string labelFileId, string language)
-        {
-            var labels = new Dictionary<string, string>();
-
-            // VERIFY: Read returns the AxLabelFile metamodel object.
-            AxLabelFile labelFile = provider.Labels.Read(labelFileId);
-            if (labelFile == null)
-            {
-                return labels;
-            }
-
-            // VERIFY: per-language label content access. The label text values live
-            // in the .txt resource of the file for the requested language; adjust
-            // the enumeration below to the actual content collection exposed by
-            // AxLabelFile (e.g. LabelContents / a language-keyed entry list).
-            foreach (var entry in labelFile.GetLabelContents(language))
-            {
-                labels[entry.Key] = entry.Value;
-            }
-
-            return labels;
-        }
-
-        /// <summary>
-        /// Writes/merges a set of (id -> text) labels into <paramref name="labelFileId"/>
-        /// for <paramref name="language"/>, saving into the given model and layer.
-        /// </summary>
-        public void WriteLabels(
-            string labelFileId,
-            string language,
-            IDictionary<string, string> labels,
-            string targetModel,
-            string layer)
-        {
-            // VERIFY: resolve the ModelInfo for the target model so the save is
-            // routed into the correct model + layer.
-            ModelInfo modelInfo = provider.ModelManifest
-                .Find(targetModel)
-                .FirstOrDefault();
-
+            // A model is bound to a single layer, so resolving its save info once and
+            // reusing it for every label file is both correct and avoids repeating the
+            // manifest lookup per file.
+            // VERIFY: ModelManifest.Find(name) -> ModelInfo.
+            ModelInfo modelInfo = provider.ModelManifest.Find(targetModel).FirstOrDefault();
             if (modelInfo == null)
             {
                 throw new InvalidOperationException(
                     $"Target model '{targetModel}' was not found in the metadata store.");
             }
 
-            if (!string.IsNullOrEmpty(layer))
-            {
-                modelInfo.Layer = layer;
-            }
+            modelName = targetModel;
+            saveInfo = new ModelSaveInfo(modelInfo);
+        }
 
-            var saveInfo = new ModelSaveInfo(modelInfo);
+        /// <summary>
+        /// The label file ids that belong to the target model. Only models you own
+        /// can be written to, so generation is scoped to a single target model.
+        /// </summary>
+        public IEnumerable<string> ListLabelFiles()
+        {
+            // VERIFY: ListObjectsForModel exists on ILabelProvider; otherwise list
+            // all label files and filter by the model's element membership.
+            return provider.Labels.ListObjectsForModel(modelName);
+        }
 
-            // VERIFY: read-existing-or-create. Existing files are updated so we add a
-            // language rather than overwrite the file's other languages.
+        /// <summary>
+        /// Copies every <paramref name="sourceLanguage"/> label in the file into
+        /// <paramref name="targetLanguage"/> and saves it. Labels that already exist
+        /// in the target language are left untouched, so re-runs fill gaps without
+        /// clobbering translations that were edited by hand. Returns the number of
+        /// labels written (0 when the file is missing or has no source content).
+        /// Performs one provider read and at most one provider write per file.
+        /// </summary>
+        public int CopyLanguage(string labelFileId, string sourceLanguage, string targetLanguage)
+        {
+            // VERIFY: Read returns the AxLabelFile metamodel object.
             AxLabelFile labelFile = provider.Labels.Read(labelFileId);
-            bool isNew = labelFile == null;
-            if (isNew)
+            if (labelFile == null)
             {
-                labelFile = new AxLabelFile { Name = labelFileId };
+                return 0;
             }
 
-            // VERIFY: set the language content. Mirrors LabelEditorController.Insert
-            // (id, text, description) used by the in-VS metadata API.
-            foreach (var label in labels)
+            // VERIFY: per-language label content access. The label text values live
+            // in the .txt resource of the file for the requested language; adjust
+            // GetLabelContents / SetLabel to the actual content API exposed by
+            // AxLabelFile.
+            var existingTarget = new HashSet<string>(
+                labelFile.GetLabelContents(targetLanguage).Select(e => e.Key));
+
+            int written = 0;
+            foreach (var entry in labelFile.GetLabelContents(sourceLanguage))
             {
-                labelFile.SetLabel(language, label.Key, label.Value, string.Empty);
+                if (existingTarget.Contains(entry.Key))
+                {
+                    continue;
+                }
+
+                labelFile.SetLabel(targetLanguage, entry.Key, entry.Value, string.Empty);
+                written++;
             }
 
-            if (isNew)
-            {
-                provider.Labels.Create(labelFile, saveInfo);
-            }
-            else
+            if (written > 0)
             {
                 provider.Labels.Update(labelFile, saveInfo);
             }
+
+            return written;
         }
     }
 
@@ -151,10 +129,6 @@ namespace LabelFileGenerator
         [Option('s', "source-lang", Required = false, Default = "en-US",
             HelpText = "Source language to copy label ids/text from. Default: en-US.")]
         public string SourceLanguage { get; set; }
-
-        [Option('y', "layer", Required = false, Default = "usr",
-            HelpText = "Layer to save the generated labels into (usr, var, cus, ...). Default: usr.")]
-        public string Layer { get; set; }
 
         [Option('f', "folder", Required = false,
             HelpText = "The AOSService folder path, e.g. K:\\AosService\\. " +
@@ -217,7 +191,6 @@ namespace LabelFileGenerator
             Console.WriteLine($"Target model:      {Arguments.Model}");
             Console.WriteLine($"Source language:   {Arguments.SourceLanguage}");
             Console.WriteLine($"Target language:   {Arguments.Language}");
-            Console.WriteLine($"Layer:             {Arguments.Layer}");
             Console.WriteLine();
 
             try
@@ -241,6 +214,12 @@ namespace LabelFileGenerator
 
         public bool init()
         {
+            if (string.Equals(Arguments.SourceLanguage, Arguments.Language, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"Source and target language are both '{Arguments.Language}'; nothing to generate.");
+                return false;
+            }
+
             initAvailableAOSServiceFolders();
 
             if (AvailableAOSServiceFolders.Count() == 0)
@@ -276,17 +255,18 @@ namespace LabelFileGenerator
         /// <summary>
         /// Reads every label file in the target model for the source language and
         /// writes the same labels back for the target language, through the
-        /// Metadata Provider API.
+        /// Metadata Provider API. A failure on one file is reported and the run
+        /// continues with the rest.
         /// </summary>
         public void GenerateLabelFiles(string packagesLocalDirectory)
         {
             Console.WriteLine("Connecting to the metadata store, please wait...");
 
-            var service = new MetadataLabelService(packagesLocalDirectory);
+            var service = new MetadataLabelService(packagesLocalDirectory, Arguments.Model);
 
-            var labelFileIds = service.ListLabelFilesForModel(Arguments.Model).ToList();
+            var labelFileIds = service.ListLabelFiles().ToList();
 
-            if (!labelFileIds.Any())
+            if (labelFileIds.Count == 0)
             {
                 Console.WriteLine($"No label files found in model '{Arguments.Model}'.");
                 return;
@@ -296,31 +276,46 @@ namespace LabelFileGenerator
             Console.WriteLine($"Generating {Arguments.Language} labels for {labelFileIds.Count} label file(s)...");
             Console.WriteLine();
 
+            int filesWritten = 0;
+            int filesSkipped = 0;
+            int filesFailed = 0;
+            int totalLabels = 0;
+
             foreach (var labelFileId in labelFileIds)
             {
-                var sourceLabels = service.ReadLabels(labelFileId, Arguments.SourceLanguage);
-
-                if (sourceLabels.Count == 0)
+                try
                 {
-                    if (Arguments.Verbose)
+                    int written = service.CopyLanguage(labelFileId, Arguments.SourceLanguage, Arguments.Language);
+
+                    if (written == 0)
                     {
-                        Console.WriteLine($"Skipped (no {Arguments.SourceLanguage} labels): {labelFileId}");
+                        filesSkipped++;
+                        if (Arguments.Verbose)
+                        {
+                            Console.WriteLine($"Skipped (nothing to add): {labelFileId}");
+                        }
                     }
-                    continue;
+                    else
+                    {
+                        filesWritten++;
+                        totalLabels += written;
+                        if (Arguments.Verbose)
+                        {
+                            Console.WriteLine($"Wrote {written} label(s): {labelFileId} [{Arguments.Language}]");
+                        }
+                    }
                 }
-
-                service.WriteLabels(
-                    labelFileId,
-                    Arguments.Language,
-                    sourceLabels,
-                    Arguments.Model,
-                    Arguments.Layer);
-
-                if (Arguments.Verbose)
+                catch (Exception e)
                 {
-                    Console.WriteLine($"Wrote {sourceLabels.Count} label(s): {labelFileId} [{Arguments.Language}]");
+                    filesFailed++;
+                    Console.WriteLine($"Failed: {labelFileId} - {e.Message}");
                 }
             }
+
+            Console.WriteLine();
+            Console.WriteLine(
+                $"{totalLabels} label(s) written across {filesWritten} file(s); " +
+                $"{filesSkipped} skipped; {filesFailed} failed.");
         }
 
         bool ValidateAOSServiceFolder(string aosServiceFolder)

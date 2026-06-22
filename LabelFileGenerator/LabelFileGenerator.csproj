@@ -51,6 +51,10 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup>
+    <!-- Default location of the D365 metadata assemblies; override via env var or /p:PackagesBinDir=... -->
+    <PackagesBinDir Condition=" '$(PackagesBinDir)' == '' ">K:\AosService\PackagesLocalDirectory\Bin</PackagesBinDir>
+  </PropertyGroup>
+  <PropertyGroup>
     <ManifestCertificateThumbprint>2E13686204BC546CB47FF0481842C1CC851D57E9</ManifestCertificateThumbprint>
   </PropertyGroup>
   <PropertyGroup>
@@ -71,8 +75,24 @@
       <HintPath>..\packages\CommandLineParser.2.3.0\lib\net45\CommandLine.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Microsoft.Dynamics.AX.Xpp.AxShared">
-      <HintPath>K:\AosService\PackagesLocalDirectory\Bin\Microsoft.Dynamics.AX.Xpp.AxShared.dll</HintPath>
+    <!--
+      D365 Metadata Provider API assemblies. These live in the AOSService bin
+      folder of any D365 dev box. The HintPath uses the MSBuild property
+      $(PackagesBinDir) so it is not hard-coded to a single drive; set it in an
+      environment variable or pass /p:PackagesBinDir=... at build time. It
+      defaults to the conventional location below when unset.
+    -->
+    <Reference Include="Microsoft.Dynamics.AX.Metadata">
+      <HintPath>$(PackagesBinDir)\Microsoft.Dynamics.AX.Metadata.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Dynamics.AX.Metadata.Core">
+      <HintPath>$(PackagesBinDir)\Microsoft.Dynamics.AX.Metadata.Core.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.Dynamics.AX.Metadata.Storage">
+      <HintPath>$(PackagesBinDir)\Microsoft.Dynamics.AX.Metadata.Storage.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
